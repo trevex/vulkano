@@ -19,13 +19,13 @@ use vulkano::{
         allocator::StandardDescriptorSetAllocator, PersistentDescriptorSet, WriteDescriptorSet,
     },
     device::{
-        physical::PhysicalDeviceType, Device, DeviceCreateInfo, DeviceExtensions, QueueCreateInfo,
-        QueueFlags,
+        physical::PhysicalDeviceType, Device, DeviceCreateInfo, DeviceExtensions, Features,
+        QueueCreateInfo, QueueFlags,
     },
     format::Format,
     image::{
-        view::ImageView, ImageAccess, ImageDimensions, ImageUsage, ImmutableImage, MipmapsCount,
-        SwapchainImage,
+        view::ImageView, ImageAccess, ImageDimensions, ImageUsage, ImageViewAbstract,
+        ImmutableImage, MipmapsCount, SwapchainImage,
     },
     impl_vertex,
     instance::{Instance, InstanceCreateInfo},
@@ -115,6 +115,10 @@ fn main() {
         physical_device,
         DeviceCreateInfo {
             enabled_extensions: device_extensions,
+            enabled_features: Features {
+                runtime_descriptor_array: true,
+                ..Features::empty()
+            },
             queue_create_infos: vec![QueueCreateInfo {
                 queue_family_index,
                 ..Default::default()
@@ -164,21 +168,26 @@ fn main() {
     #[derive(Clone, Copy, Debug, Default, Zeroable, Pod)]
     struct Vertex {
         position: [f32; 2],
+        texture_id: u32,
     }
-    impl_vertex!(Vertex, position);
+    impl_vertex!(Vertex, position, texture_id);
 
     let vertices = [
         Vertex {
             position: [-0.5, -0.5],
+            texture_id: 0,
         },
         Vertex {
             position: [-0.5, 0.5],
+            texture_id: 0,
         },
         Vertex {
             position: [0.5, -0.5],
+            texture_id: 0,
         },
         Vertex {
             position: [0.5, 0.5],
+            texture_id: 0,
         },
     ];
     let vertex_buffer = CpuAccessibleBuffer::<[Vertex]>::from_iter(
@@ -242,7 +251,7 @@ fn main() {
             &mut uploads,
         )
         .unwrap();
-        ImageView::new_default(image).unwrap()
+        ImageView::new_default(image).unwrap() as Arc<dyn ImageViewAbstract>
     };
 
     let sampler = Sampler::new(
@@ -272,7 +281,11 @@ fn main() {
     let set = PersistentDescriptorSet::new(
         &descriptor_set_allocator,
         layout.clone(),
-        [WriteDescriptorSet::image_view_sampler(0, texture, sampler)],
+        [WriteDescriptorSet::image_view_sampler_array(
+            0,
+            0,
+            [(texture, sampler)],
+        )],
     )
     .unwrap();
 
@@ -439,11 +452,14 @@ mod vs {
 #version 450
 
 layout(location = 0) in vec2 position;
+layout(location = 1) in uint texture_id;
 layout(location = 0) out vec2 tex_coords;
+layout(location = 1) flat out uint tex_id;
 
 void main() {
     gl_Position = vec4(position, 0.0, 1.0);
     tex_coords = position + vec2(0.5);
+    tex_id = texture_id;
 }"
     }
 }
@@ -453,14 +469,16 @@ mod fs {
         ty: "fragment",
         src: "
 #version 450
+#extension GL_EXT_nonuniform_qualifier: require
 
 layout(location = 0) in vec2 tex_coords;
+layout(location = 1) flat in uint tex_id;
 layout(location = 0) out vec4 f_color;
 
-layout(set = 0, binding = 0) uniform sampler2D tex;
+layout(set = 0, binding = 0) uniform sampler2D textures[];
 
 void main() {
-    f_color = texture(tex, tex_coords);
+    f_color = texture(textures[tex_id], tex_coords);
 }"
     }
 }
