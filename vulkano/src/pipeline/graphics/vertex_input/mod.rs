@@ -104,6 +104,7 @@ pub use self::{
     collection::VertexBuffersCollection,
     definition::{IncompatibleVertexDefinitionError, VertexDefinition},
     impl_vertex::VertexMember,
+    runtime::{RuntimeVertexBuilder, RuntimeVertexIter, VertexAttribute},
     vertex::{Vertex, VertexBufferInfo, VertexMemberInfo},
 };
 use crate::format::Format;
@@ -113,6 +114,7 @@ mod buffers;
 mod collection;
 mod definition;
 mod impl_vertex;
+mod runtime;
 mod vertex;
 
 /// The state in a graphics pipeline describing how the vertex input stage should behave.
