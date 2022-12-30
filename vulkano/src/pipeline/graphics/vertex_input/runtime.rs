@@ -1,6 +1,4 @@
 use std::borrow::Cow;
-use std::iter::{Cloned, Enumerate, FlatMap};
-use std::vec::IntoIter;
 
 use bytemuck::Pod;
 
@@ -22,13 +20,6 @@ impl VertexAttribute {
             format,
         }
     }
-}
-
-struct RuntimeVertexMember<'d> {
-    names: Vec<Cow<'static, str>>,
-    info: VertexMemberInfo,
-    field_size: usize,
-    data: &'d [u8],
 }
 
 pub struct RuntimeVertexBuilder<'d> {
@@ -83,38 +74,8 @@ impl<'d> RuntimeVertexBuilder<'d> {
     }
 
     #[inline]
-    pub fn build(
-        self,
-    ) -> Option<(
-        // Cloned<
-        //     FlatMap<
-        //         Enumerate<IntoIter<(&'d [u8], usize)>>,
-        //         &'d [u8],
-        //         impl FnMut((usize, (&'d [u8], usize))) -> &'d [u8],
-        //     >,
-        // >,
-        // Cloned<
-        //     FlatMap<
-        //         std::ops::Range<usize>,
-        //         FlatMap<
-        //             core::slice::Iter<'d, (&'d [u8], usize)>,
-        //             &'d [u8],
-        //             impl FnMut(&'d (&'d [u8], usize)) -> &'d [u8],
-        //         >,
-        //         impl FnMut(
-        //             usize,
-        //         ) -> FlatMap<
-        //             core::slice::Iter<'d, (&'d [u8], usize)>,
-        //             &'d [u8],
-        //             impl FnMut(&'d (&'d [u8], usize)) -> &'d [u8],
-        //         >,
-        //     >,
-        // >,
-        impl Iterator<Item = u8> + 'd,
-        VertexBufferInfo,
-    )> {
-        // TODO: return Result instead!
-
+    pub fn build(self) -> (impl Iterator<Item = u8> + 'd, VertexBufferInfo) {
+        // TODO: Returning ExactSizeIterator from FlatMap?
         let info = VertexBufferInfo {
             members: self
                 .members
@@ -131,22 +92,16 @@ impl<'d> RuntimeVertexBuilder<'d> {
             .map(|(data, size)| data.len() / size)
             .min()
             .unwrap();
-        let iter = (0..count)
-            .zip(std::iter::repeat(self.slices))
-            .flat_map(move |(i, slices)| {
-                slices
-                    .iter()
-                    .flat_map(|(data, size)| &data[i * size..i * (size + 1)])
-                    .collect::Vec<u8>()
-            })
-            .cloned();
-        // let iter = attributes
-        //     .into_iter()
-        //     .enumerate()
-        //     .flat_map(move |(i, (member, size))| &member.data[i * size..i * (size + 1)])
-        //     .cloned();
 
-        Some((iter, info))
+        let iter = (0..count).flat_map(move |i| {
+            self.slices
+                .iter()
+                .flat_map(|(data, size)| &data[i * size..(i + 1) * size])
+                .cloned()
+                .collect::<Vec<u8>>() // TODO: Is there a way to avoid this allocation?
+        });
+
+        (iter, info)
     }
 }
 
@@ -183,8 +138,7 @@ mod tests {
         let (iter, info) = RuntimeVertexBuilder::new()
             .add(ATTRIBUTE_POSITION, &positions)
             .add(ATTRIBUTE_UVS, &uvs)
-            .build()
-            .unwrap();
+            .build();
 
         let data: Vec<u8> = iter.collect();
         let mut expected = pos_0.as_bytes().to_vec();
@@ -201,5 +155,37 @@ mod tests {
                 .filter(|&(a, b)| a == b)
                 .count()
         );
+    }
+
+    use test::Bencher;
+
+    #[bench]
+    fn bench_runtime_vertex(b: &mut Bencher) {
+        let pos_0 = [0.1f32, 1.2, 2.3];
+        let pos_1 = [3.4f32, 4.5, 5.6];
+        let positions = [
+            pos_0, pos_1, pos_0, pos_1, pos_0, pos_1, pos_0, pos_1, pos_0, pos_1, pos_0, pos_1,
+            pos_0, pos_1, pos_0, pos_1, pos_0, pos_1, pos_0, pos_1, pos_0, pos_1, pos_0, pos_1,
+        ];
+        #[repr(C)]
+        #[derive(Clone, Copy, Debug, Default, Zeroable, Pod)]
+        struct Vec2 {
+            x: f32,
+            y: f32,
+        }
+        let uv_0 = Vec2 { x: 0.15, y: 1.0 };
+        let uv_1 = Vec2 { x: 0.72, y: 0.0 };
+        let uvs = [
+            uv_0, uv_1, uv_0, uv_1, uv_0, uv_1, uv_0, uv_1, uv_0, uv_1, uv_0, uv_1, uv_0, uv_1,
+            uv_0, uv_1, uv_0, uv_1, uv_0, uv_1, uv_0, uv_1, uv_0, uv_1,
+        ];
+        b.iter(|| {
+            let (iter, _info) = RuntimeVertexBuilder::new()
+                .add(ATTRIBUTE_POSITION, &positions)
+                .add(ATTRIBUTE_UVS, &uvs)
+                .build();
+
+            iter.collect::<Vec<u8>>()
+        })
     }
 }

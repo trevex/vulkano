@@ -85,7 +85,9 @@
     clippy::vec_box,
     clippy::wrong_self_convention
 )]
-#![feature(impl_trait_in_fn_trait_return)]
+#![feature(test)]
+
+extern crate test;
 
 pub use ash::vk::Handle;
 pub use half;

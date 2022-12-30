@@ -291,8 +291,7 @@ fn main() {
     let (vertex_buffer_iter, vertex_buffer_info) = RuntimeVertexBuilder::new()
         .add(ATTRIBUTE_POSITION, &positions)
         .add(ATTRIBUTE_COLOR, &colors)
-        .build()
-        .unwrap();
+        .build();
 
     // We can't use vertex_buffer.len()/TypedBufferAccesss-trait as T is u8 and
     // does not represent the type of the vertex. So let's calculate the number of vertices:
