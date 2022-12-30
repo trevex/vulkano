@@ -104,7 +104,7 @@ pub use self::{
     collection::VertexBuffersCollection,
     definition::{IncompatibleVertexDefinitionError, VertexDefinition},
     impl_vertex::VertexMember,
-    runtime::{RuntimeVertexBuilder, RuntimeVertexIter, VertexAttribute},
+    runtime::{RuntimeVertexBuilder, VertexAttribute},
     vertex::{Vertex, VertexBufferInfo, VertexMemberInfo},
 };
 use crate::format::Format;

@@ -1,4 +1,6 @@
 use std::borrow::Cow;
+use std::iter::{Cloned, Enumerate, FlatMap};
+use std::vec::IntoIter;
 
 use bytemuck::Pod;
 
@@ -25,11 +27,13 @@ impl VertexAttribute {
 struct RuntimeVertexMember<'d> {
     names: Vec<Cow<'static, str>>,
     info: VertexMemberInfo,
+    field_size: usize,
     data: &'d [u8],
 }
 
 pub struct RuntimeVertexBuilder<'d> {
-    members: Vec<RuntimeVertexMember<'d>>,
+    members: Vec<(Cow<'static, str>, VertexMemberInfo)>,
+    slices: Vec<(&'d [u8], usize)>,
     offset: usize,
 }
 
@@ -38,6 +42,7 @@ impl<'d> RuntimeVertexBuilder<'d> {
     pub fn new() -> Self {
         Self {
             members: Vec::new(),
+            slices: Vec::new(),
             offset: 0,
         }
     }
@@ -48,11 +53,11 @@ impl<'d> RuntimeVertexBuilder<'d> {
         [T]: BufferContents,
         T: Pod,
     {
-        let field_size = std::mem::size_of::<T>() as u32;
+        let field_size = std::mem::size_of::<T>();
         let format_size = attribute
             .format
             .block_size()
-            .expect("no block size for format") as u32;
+            .expect("no block size for format") as usize;
         let num_elements = field_size / format_size;
         let remainder = field_size % format_size;
         assert!(
@@ -61,111 +66,87 @@ impl<'d> RuntimeVertexBuilder<'d> {
             attribute.name,
             attribute.format,
         );
-        self.members.push(RuntimeVertexMember {
-            names: vec![attribute.name], // TODO: support multiple names?
-            info: VertexMemberInfo {
+
+        self.members.push((
+            attribute.name, // TODO: support multiple names?
+            VertexMemberInfo {
                 offset: self.offset,
                 format: attribute.format,
-                num_elements,
+                num_elements: num_elements as u32,
             },
-            data: data.as_bytes(),
-        });
-        self.offset += field_size as usize;
+        ));
+        self.offset += field_size;
+
+        self.slices.push((data.as_bytes(), field_size));
 
         self
     }
 
     #[inline]
-    pub fn build(self) -> Option<(RuntimeVertexIter<'d>, VertexBufferInfo)> {
+    pub fn build(
+        self,
+    ) -> Option<(
+        // Cloned<
+        //     FlatMap<
+        //         Enumerate<IntoIter<(&'d [u8], usize)>>,
+        //         &'d [u8],
+        //         impl FnMut((usize, (&'d [u8], usize))) -> &'d [u8],
+        //     >,
+        // >,
+        // Cloned<
+        //     FlatMap<
+        //         std::ops::Range<usize>,
+        //         FlatMap<
+        //             core::slice::Iter<'d, (&'d [u8], usize)>,
+        //             &'d [u8],
+        //             impl FnMut(&'d (&'d [u8], usize)) -> &'d [u8],
+        //         >,
+        //         impl FnMut(
+        //             usize,
+        //         ) -> FlatMap<
+        //             core::slice::Iter<'d, (&'d [u8], usize)>,
+        //             &'d [u8],
+        //             impl FnMut(&'d (&'d [u8], usize)) -> &'d [u8],
+        //         >,
+        //     >,
+        // >,
+        impl Iterator<Item = u8> + 'd,
+        VertexBufferInfo,
+    )> {
         // TODO: return Result instead!
-        // Let check if all buffers have the same number of elements
-        let mut num_vertices = 0;
-        for member in &self.members {
-            let field_size = member.info.num_elements
-                * member
-                    .info
-                    .format
-                    .block_size()
-                    .expect("no block size for format") as u32;
-            if num_vertices == 0 {
-                num_vertices = member.data.len() / field_size as usize;
-            } else if num_vertices != (member.data.len() / field_size as usize) {
-                return None;
-            }
-        }
 
         let info = VertexBufferInfo {
             members: self
                 .members
                 .iter()
-                .map(|member| (member.names[0].to_string(), member.info.clone()))
+                .map(|member| (member.0.to_string(), member.1.clone()))
                 .collect(),
             stride: self.offset as u32,
             input_rate: super::VertexInputRate::Vertex,
         };
 
-        let length = self.members.iter().map(|member| member.data.len()).sum();
-        // We need to know the byte ranges of the vertex that belong to our members
-        let mut member_max: Vec<usize> = self
-            .members
+        let count = self
+            .slices
             .iter()
-            .skip(1)
-            .map(|member| member.info.offset)
-            .collect();
-        member_max.push(self.offset); // stride
-        let member_min: Vec<usize> = self
-            .members
-            .iter()
-            .map(|member| member.info.offset)
-            .collect();
-        let member_ranges = member_min.into_iter().zip(member_max.into_iter()).collect();
-
-        let iter = RuntimeVertexIter {
-            members: self.members,
-            member_ranges,
-            stride: self.offset as u32,
-            length,
-            index: 0,
-        };
+            .map(|(data, size)| data.len() / size)
+            .min()
+            .unwrap();
+        let iter = (0..count)
+            .zip(std::iter::repeat(self.slices))
+            .flat_map(move |(i, slices)| {
+                slices
+                    .iter()
+                    .flat_map(|(data, size)| &data[i * size..i * (size + 1)])
+                    .collect::Vec<u8>()
+            })
+            .cloned();
+        // let iter = attributes
+        //     .into_iter()
+        //     .enumerate()
+        //     .flat_map(move |(i, (member, size))| &member.data[i * size..i * (size + 1)])
+        //     .cloned();
 
         Some((iter, info))
-    }
-}
-
-pub struct RuntimeVertexIter<'d> {
-    members: Vec<RuntimeVertexMember<'d>>,
-    member_ranges: Vec<(usize, usize)>,
-    stride: u32,
-    length: usize,
-    index: usize,
-}
-
-impl<'d> Iterator for RuntimeVertexIter<'d> {
-    type Item = u8;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        if self.length == self.index {
-            return None;
-        }
-        let vertex_index = self.index / (self.stride as usize);
-        let data_offset = self.index % (self.stride as usize);
-        let member_index = self
-            .member_ranges
-            .iter()
-            .position(|range| range.0 <= data_offset && range.1 > data_offset)
-            .unwrap();
-        let member = &self.members[member_index];
-        let field_size = self.member_ranges[member_index].1 - self.member_ranges[member_index].0;
-        let member_offset = data_offset - self.member_ranges[member_index].0;
-        let data = member.data[vertex_index * field_size + member_offset];
-        self.index += 1;
-        Some(data)
-    }
-}
-
-impl<'d> ExactSizeIterator for RuntimeVertexIter<'d> {
-    fn len(&self) -> usize {
-        self.length - self.index
     }
 }
 

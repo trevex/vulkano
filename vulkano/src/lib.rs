@@ -85,6 +85,7 @@
     clippy::vec_box,
     clippy::wrong_self_convention
 )]
+#![feature(impl_trait_in_fn_trait_return)]
 
 pub use ash::vk::Handle;
 pub use half;
