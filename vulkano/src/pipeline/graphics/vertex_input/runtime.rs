@@ -161,28 +161,43 @@ mod tests {
 
     #[bench]
     fn bench_runtime_vertex(b: &mut Bencher) {
-        let pos_0 = [0.1f32, 1.2, 2.3];
-        let pos_1 = [3.4f32, 4.5, 5.6];
-        let positions = [
-            pos_0, pos_1, pos_0, pos_1, pos_0, pos_1, pos_0, pos_1, pos_0, pos_1, pos_0, pos_1,
-            pos_0, pos_1, pos_0, pos_1, pos_0, pos_1, pos_0, pos_1, pos_0, pos_1, pos_0, pos_1,
-        ];
+        const ATTRIBUTE_NORMAL: VertexAttribute =
+            VertexAttribute::new("normal", Format::R32G32B32_SFLOAT);
+        const ATTRIBUTE_NORMAL_UVS: VertexAttribute =
+            VertexAttribute::new("normal_uvs", Format::R32G32_SFLOAT);
+        let num_vertices = 1024;
+        let positions: Vec<[f32; 3]> = vec![[1.0f32, 2.0, 3.0]]
+            .into_iter()
+            .cycle()
+            .take(num_vertices)
+            .collect();
+        let normals: Vec<[f32; 3]> = vec![[3.0f32, 2.0, 1.0]]
+            .into_iter()
+            .cycle()
+            .take(num_vertices)
+            .collect();
         #[repr(C)]
         #[derive(Clone, Copy, Debug, Default, Zeroable, Pod)]
         struct Vec2 {
             x: f32,
             y: f32,
         }
-        let uv_0 = Vec2 { x: 0.15, y: 1.0 };
-        let uv_1 = Vec2 { x: 0.72, y: 0.0 };
-        let uvs = [
-            uv_0, uv_1, uv_0, uv_1, uv_0, uv_1, uv_0, uv_1, uv_0, uv_1, uv_0, uv_1, uv_0, uv_1,
-            uv_0, uv_1, uv_0, uv_1, uv_0, uv_1, uv_0, uv_1, uv_0, uv_1,
-        ];
+        let uvs: Vec<Vec2> = vec![Vec2 { x: 0.0, y: 1.0 }]
+            .into_iter()
+            .cycle()
+            .take(num_vertices)
+            .collect();
+        let normal_uvs: Vec<Vec2> = vec![Vec2 { x: 1.0, y: 0.0 }]
+            .into_iter()
+            .cycle()
+            .take(num_vertices)
+            .collect();
         b.iter(|| {
             let (iter, _info) = RuntimeVertexBuilder::new()
                 .add(ATTRIBUTE_POSITION, &positions)
                 .add(ATTRIBUTE_UVS, &uvs)
+                .add(ATTRIBUTE_NORMAL, &normals)
+                .add(ATTRIBUTE_NORMAL_UVS, &normal_uvs)
                 .build();
 
             iter.collect::<Vec<u8>>()
