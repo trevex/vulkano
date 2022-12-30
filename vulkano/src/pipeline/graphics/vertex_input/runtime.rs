@@ -150,7 +150,8 @@ impl<'d> Iterator for RuntimeVertexIter<'d> {
         let field_size =
             self.member_ranges[self.member_index].1 - self.member_ranges[self.member_index].0;
         let member_offset = data_offset - self.member_ranges[self.member_index].0;
-        let data = self.slices[self.member_index].0[vertex_index * field_size + member_offset];
+        let data =
+            self.member_slices[self.member_index].0[vertex_index * field_size + member_offset];
         self.data_index += 1;
         Some(data)
     }
@@ -218,9 +219,21 @@ mod tests {
 
     #[bench]
     fn bench_runtime_vertex(b: &mut Bencher) {
+        const ATTRIBUTE_NORMAL: VertexAttribute =
+            VertexAttribute::new("normal", Format::R32G32B32_SFLOAT);
+        const ATTRIBUTE_NORMAL_UVS: VertexAttribute =
+            VertexAttribute::new("normal_uvs", Format::R32G32_SFLOAT);
         let pos_0 = [0.1f32, 1.2, 2.3];
         let pos_1 = [3.4f32, 4.5, 5.6];
         let positions = [
+            pos_0, pos_1, pos_0, pos_1, pos_0, pos_1, pos_0, pos_1, pos_0, pos_1, pos_0, pos_1,
+            pos_0, pos_1, pos_0, pos_1, pos_0, pos_1, pos_0, pos_1, pos_0, pos_1, pos_0, pos_1,
+            pos_0, pos_1, pos_0, pos_1, pos_0, pos_1, pos_0, pos_1, pos_0, pos_1, pos_0, pos_1,
+            pos_0, pos_1, pos_0, pos_1, pos_0, pos_1, pos_0, pos_1, pos_0, pos_1, pos_0, pos_1,
+        ];
+        let normals = [
+            pos_0, pos_1, pos_0, pos_1, pos_0, pos_1, pos_0, pos_1, pos_0, pos_1, pos_0, pos_1,
+            pos_0, pos_1, pos_0, pos_1, pos_0, pos_1, pos_0, pos_1, pos_0, pos_1, pos_0, pos_1,
             pos_0, pos_1, pos_0, pos_1, pos_0, pos_1, pos_0, pos_1, pos_0, pos_1, pos_0, pos_1,
             pos_0, pos_1, pos_0, pos_1, pos_0, pos_1, pos_0, pos_1, pos_0, pos_1, pos_0, pos_1,
         ];
@@ -234,12 +247,22 @@ mod tests {
         let uv_1 = Vec2 { x: 0.72, y: 0.0 };
         let uvs = [
             uv_0, uv_1, uv_0, uv_1, uv_0, uv_1, uv_0, uv_1, uv_0, uv_1, uv_0, uv_1, uv_0, uv_1,
-            uv_0, uv_1, uv_0, uv_1, uv_0, uv_1, uv_0, uv_1, uv_0, uv_1,
+            uv_0, uv_1, uv_0, uv_1, uv_0, uv_1, uv_0, uv_1, uv_0, uv_1, uv_0, uv_1, uv_0, uv_1,
+            uv_0, uv_1, uv_0, uv_1, uv_0, uv_1, uv_0, uv_1, uv_0, uv_1, uv_0, uv_1, uv_0, uv_1,
+            uv_0, uv_1, uv_0, uv_1, uv_0, uv_1,
+        ];
+        let normal_uvs = [
+            uv_0, uv_1, uv_0, uv_1, uv_0, uv_1, uv_0, uv_1, uv_0, uv_1, uv_0, uv_1, uv_0, uv_1,
+            uv_0, uv_1, uv_0, uv_1, uv_0, uv_1, uv_0, uv_1, uv_0, uv_1, uv_0, uv_1, uv_0, uv_1,
+            uv_0, uv_1, uv_0, uv_1, uv_0, uv_1, uv_0, uv_1, uv_0, uv_1, uv_0, uv_1, uv_0, uv_1,
+            uv_0, uv_1, uv_0, uv_1, uv_0, uv_1,
         ];
         b.iter(|| {
             let (iter, _info) = RuntimeVertexBuilder::new()
                 .add(ATTRIBUTE_POSITION, &positions)
                 .add(ATTRIBUTE_UVS, &uvs)
+                .add(ATTRIBUTE_NORMAL, &normals)
+                .add(ATTRIBUTE_NORMAL_UVS, &normal_uvs)
                 .build();
 
             iter.collect::<Vec<u8>>()
